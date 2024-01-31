@@ -1,0 +1,204 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width; initial-scale=1; maximum-scale=1; user-scalable=0;"/>
+		<title>SPM Web</title>
+		<link rel="icon" type="image/png" href="favicon.png"/>
+		<link rel="preconnect" href="https://fonts.googleapis.com">
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+		<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300&display=swap" rel="stylesheet">
+		<style>
+			:root {
+				color-scheme: only dark;
+				font: normal 300 3vmax Roboto;
+
+				--spacing: 1vmax;
+				--bording: .25vmax;
+				--padding: .5vmax;
+				--rounding: .5vmax;
+
+				--color-base: #222831;
+				--color-sub: #393E46;
+				--color-accent: #00ADB5;
+				--color-accent-plus: #FF5722;
+				--color-text: #EEEEEE;
+
+				color: var(--color-text);
+				background-color: var(--color-base);
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			html, body {
+				margin: 0;
+				width: 100%;
+				height: 100%;
+			}
+
+			body {
+				display: flex;
+				place-items: center;
+				place-content: center;
+				padding: var(--spacing);
+			}
+
+			button {
+				background: none;
+				color: inherit;
+				border: var(--bording) solid var(--color-sub);
+				border-radius: var(--rounding);
+
+				padding: var(--padding);
+				font: inherit;
+				cursor: pointer;
+				outline: inherit;
+			}
+			button:hover, button:focus {
+				border-color: var(--color-accent);
+			}
+			button:active {
+				border-color: var(--color-accent-plus);
+			}
+			button[disabled] {
+				pointer-events: none !important;
+			}
+			
+			input[type="password"], textarea {
+				background: none;
+				padding: var(--padding);
+				border: var(--bording) solid var(--color-sub);
+				border-radius: var(--rounding);
+				color: inherit;
+				font: inherit;
+				width: 100%;
+			}
+			input[type="password"]:hover, textarea:hover {
+				border-color: var(--color-accent);
+			}
+			input[type="password"]:focus, textarea:focus {
+				outline: none;
+				border-color: var(--color-accent-plus);
+			}
+			input[type="password"]:placeholder-shown, textarea:placeholder-shown {
+				color: inherit;
+				font: inherit;
+			}
+
+			textarea {
+				resize: vertical;
+				min-height: 2lh;
+			}
+
+			form {
+				width: 50vmax;
+				max-width: 100%;
+
+				display: flex;
+				flex-flow: column nowrap;
+				gap: var(--spacing);
+				place-content: center;
+
+				transition: filter .4s ease-in-out;
+			}
+
+			summary {
+				cursor: pointer;
+			}
+			details[open] summary {
+				margin-bottom: var(--spacing);
+			}
+
+			.blur {
+				filter: blur(4px);
+				pointer-events: none;
+			}
+
+		</style>
+		<script src="spm_core.js"></script>
+		<script src="load_core.js"></script>
+		<script>
+			//emcc -O3 -o spm_core.js -s WASM=1 -s EXPORTED_RUNTIME_METHODS='["cwrap"]' -s TOTAL_MEMORY=500MB -I ./native/monocypher -I ./native/toolkit ./native/toolkit.c ./native/monocypher.c ./native/ems.c
+		</script>
+	</head>
+	<body>
+		<form>
+			<details>
+				<summary>Custom charset</summary>
+				<textarea id="charset" placeholder="Custom charset" ></textarea>
+			</details>
+			<input type="password" placeholder="Master password" id="password" />
+			<input type="password" placeholder="Target" id="target" />
+			<button id="button" class="progress" >Copy</button>
+		</form>
+		<script>
+			function loadPasswordRequest(){
+				if (window.Worker){
+					// console.log("using webworker")
+					const worker = new Worker("worker.js");
+					const responses = new Map();
+					let index = 0;
+
+					worker.onmessage = e => responses.set(e.data.id, e.data.password);
+
+					return (params) => new Promise(resolve => {
+						const requestId = index++;
+
+						let interval = setInterval(() => {
+							if (responses.has(requestId)){
+								resolve(responses.get(requestId));
+								responses.delete(requestId);
+								clearInterval(interval);
+							}
+						}, 100);
+
+						worker.postMessage([requestId, ...params]);
+					});
+				} else {
+					// console.log("using sync");
+					return async (params) => {
+						const api = await core;
+						console.log(params)
+						return api.renderPassword(...params);
+					}
+				}
+			}
+
+			function save(key, value){
+				window.localStorage.setItem(key, value);
+			}
+			function load(key){
+				return window.localStorage.getItem(key);
+			}
+
+			const passwordRequest = loadPasswordRequest();
+
+			const form = document.querySelector("form");
+			const inputs = {
+				charset: document.querySelector("#charset"),
+				password: document.querySelector("#password"),
+				target: document.querySelector("#target"),
+				button: document.querySelector("#button")
+			};
+
+			inputs.charset.value = load("charset") ?? "";
+			form.addEventListener("submit", e => e.preventDefault());
+			inputs.charset.addEventListener("input", e => save("charset", e.target.value));
+			inputs.button.addEventListener("click", async () => {
+				inputs.button.disabled = true;
+				form.classList.add("blur");
+				console.log("sent");
+				const password = await passwordRequest([
+					inputs.password.value,
+					inputs.target.value,
+					inputs.charset.value || null
+				]);
+				navigator.clipboard.writeText(password);
+				inputs.button.disabled = false;
+				form.classList.remove("blur");
+			});
+		</script>
+	</body>
+</html>
